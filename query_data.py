@@ -9,15 +9,22 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-DB_PATH = str(Path(__file__).parent / "vector_db")
-MODEL = "gpt-4.1-mini"
+DB_PATH = str(Path(__file__).parent.parent / "vector_db")
+MODEL = "gpt-5-mini"
 EMBEDDINGS = OpenAIEmbeddings(model = "text-embedding-3-large")
 RETRIEVEL_K = 5
- 
+
+vector_store = Chroma(
+        persist_directory=DB_PATH,
+        embedding_function=EMBEDDINGS
+    )
+llm = ChatOpenAI(model=MODEL, temperature=0)
+
 
 SYSTEM_PROMPT="""
 You are a knowledgeable and friendly professor representing our university.
 You are going to explain the questions that the people are asking about subject lectures etc.
+By the way you currently have the Calculus, Computer Techniques and Architecture, Introduction to Java programmin, Japanese culture and Managment
 Be polite friendly and if you do not know something, say it.
 If the given context is relevant, use the given context to answer questions.
 Context:
@@ -26,40 +33,45 @@ Context:
 Answer the question based on the context above: {question}
 """
 
+
+
 def get_relevant_chunks(question):
     """
     Returns most relevant context chunks respect to the question.
     """
-    vector_store = Chroma(
-        persist_directory=DB_PATH,
-        embedding_function=EMBEDDINGS
-    )
-    results = vector_store.similarity_search_with_score(query=question, k=RETRIEVEL_K)
+    retriever = vector_store.as_retriever()
 
-    full_context="\n\n ---- \n\n".join([doc.page_content for doc, _score in results])
+    return retriever.invoke(question,k=RETRIEVEL_K)
 
-    return full_context
+def combined_messages(question , history):
+    """
+    A combined questions string for a better rag response (inclued last question as well)
+    """
+    combined = "\n".join([m["content"] for m in history if m["role"] == "user"])
+    return combined + "\n" + question
 
     
     
     
 
-def answer(question):
+def answer_question(question, history):
     """
     Returns an ai response with using our most relevant chunks from all the documents WITH SYSTEM PROMPT.
     """
-    llm = ChatOpenAI(model=MODEL, temperature=0)
-
-    relevant_chunks = get_relevant_chunks(question=question)
-    
-    prompt = SYSTEM_PROMPT.format(context=relevant_chunks, question=question)
-
-    response = llm.invoke(prompt)
-
-    return response.content , relevant_chunks
-    
+    combined = combined_messages(question=question, history=history) 
+    docs= get_relevant_chunks(combined)
+    context = "\n\n".join([doc.page_content for doc in docs])
     
 
-answer1 , chunks = answer("what is cash cow in bcg")
-print(answer1)
-print(chunks)
+    currSystemPrompt = SYSTEM_PROMPT.format(context=context, question=question)
+    print(context)
+
+    messages = [SystemMessage(currSystemPrompt)]
+    messages.extend(convert_to_messages(history))
+    messages.append(HumanMessage(question))
+
+    response = llm.invoke(messages)
+    return response.content , docs
+    
+    
+
