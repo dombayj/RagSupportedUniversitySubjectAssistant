@@ -17,7 +17,8 @@ A Retrieval-Augmented Generation (RAG) chatbot that lets students ask questions 
 - Calculus
 - Computer Techniques and Architecture
 - Introduction to Java Programming
-- Japanese Culture and Management
+- Japanese Culture
+- Management
 
 ## Tech Stack
 
